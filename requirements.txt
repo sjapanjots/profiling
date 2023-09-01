@@ -1,7 +1,7 @@
 operator
 streamlit
 plotly
-pycaret.regression
+pycaret
 pandas_profiling
 pandas
 streamlit_pandas_profiling
