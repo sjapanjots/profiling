@@ -6,9 +6,3 @@ pandas_profiling
 pandas
 streamlit_pandas_profiling
 os
-setup
-compare_models
-pull
-save_model
-load_model
-st_profile_report
