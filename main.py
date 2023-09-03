@@ -1,44 +1,81 @@
-import streamlit as st
-import plotly as px
-from pycaret.regression import setup, compare_models, pull, save_model, load_model
-import pandas_profiling
 import pandas as pd
-from streamlit_pandas_profiling import st_profile_report
-import os 
+import pandas_profiling
+import http.server
+import socketserver
+from urllib.parse import urlparse, parse_qs
+from http import HTTPStatus
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+import joblib
 
-if os.path.exists('./dataset.csv'): 
-    df = pd.read_csv('dataset.csv', index_col=None)
+# Define a global variable to store the dataset
+dataset = None
 
-with st.sidebar: 
-    st.image("https://www.onepointltd.com/wp-content/uploads/2020/03/inno2.png")
-    st.title("AutoNickML")
-    choice = st.radio("Navigation", ["Upload","Profiling","Modelling", "Download"])
-    st.info("This project application helps you build and explore your data.")
+class MyRequestHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        global dataset
+        parsed_url = urlparse(self.path)
+        query_params = parse_qs(parsed_url.query)
+        
+        if parsed_url.path == '/':
+            self.send_response(HTTPStatus.OK)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            with open('index.html', 'rb') as file:
+                self.wfile.write(file.read())
+        elif parsed_url.path == '/download_model' and dataset is not None:
+            self.send_response(HTTPStatus.OK)
+            self.send_header('Content-type', 'application/octet-stream')
+            self.send_header('Content-Disposition', 'attachment; filename="trained_model.pkl"')
+            self.end_headers()
+            with open('trained_model.pkl', 'rb') as file:
+                self.wfile.write(file.read())
+        else:
+            self.send_error(HTTPStatus.NOT_FOUND, 'File not found')
 
-if choice == "Upload":
-    st.title("Upload Your Dataset")
-    file = st.file_uploader("Upload Your Dataset")
-    if file: 
-        df = pd.read_csv(file, index_col=None)
-        df.to_csv('dataset.csv', index=None)
-        st.dataframe(df)
+    def do_POST(self):
+        global dataset
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length).decode('utf-8')
+        parsed_url = urlparse(self.path)
+        
+        if parsed_url.path == '/upload':
+            dataset = pd.read_csv(pd.compat.StringIO(post_data))
+            self.send_response(HTTPStatus.OK)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write("Dataset uploaded successfully.".encode('utf-8'))
+        elif parsed_url.path == '/profile' and dataset is not None:
+            profile = pandas_profiling.ProfileReport(dataset)
+            profile.to_file("dataset_profile.html")
+            self.send_response(HTTPStatus.OK)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            with open('dataset_profile.html', 'rb') as file:
+                self.wfile.write(file.read())
+        elif parsed_url.path == '/train_model' and dataset is not None:
+            target_column = parse_qs(post_data)['target_column'][0]
+            X = dataset.drop(columns=[target_column])
+            y = dataset[target_column]
 
-if choice == "Profiling": 
-    st.title("Exploratory Data Analysis")
-    profile_df = df.profile_report()
-    st_profile_report(profile_df)
+            # Split the dataset into train and test sets
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-if choice == "Modelling": 
-    chosen_target = st.selectbox('Choose the Target Column', df.columns)
-    if st.button('Run Modelling'): 
-        setup(df, target=chosen_target, silent=True)
-        setup_df = pull()
-        st.dataframe(setup_df)
-        best_model = compare_models()
-        compare_df = pull()
-        st.dataframe(compare_df)
-        save_model(best_model, 'best_model')
+            # Train a simple RandomForestRegressor as an example
+            model = RandomForestRegressor()
+            model.fit(X_train, y_train)
 
-if choice == "Download": 
-    with open('best_model.pkl', 'rb') as f: 
-        st.download_button('Download Model', f, file_name="best_model.pkl")
+            # Save the trained model
+            joblib.dump(model, 'trained_model.pkl')
+
+            self.send_response(HTTPStatus.OK)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write("Model trained and saved successfully.".encode('utf-8'))
+        else:
+            self.send_error(HTTPStatus.NOT_FOUND, 'Endpoint not found')
+
+if __name__ == '__main__':
+    httpd = socketserver.TCPServer(('localhost', 8000), MyRequestHandler)
+    print("Server started at http://localhost:8000")
+    httpd.serve_forever()
