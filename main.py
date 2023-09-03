@@ -1,4 +1,3 @@
-from operator import index
 import streamlit as st
 import pandas_profiling
 import pandas as pd
