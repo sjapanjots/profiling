@@ -4,4 +4,3 @@ pycaret
 pandas_profiling
 pandas 
 streamlit_pandas_profiling
-operator
